@@ -1,6 +1,51 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
+interface FirecrawlResponse {
+  success: boolean;
+  data: {
+    content: string;
+    markdown: string;
+    metadata: {
+      title?: string;
+      description?: string;
+      ogImage?: string;
+    };
+    html?: string;
+  };
+}
+
+async function scrapeWithFirecrawl(url: string): Promise<FirecrawlResponse | null> {
+  const apiKey = process.env.FIRECRAWL_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const response = await fetch("https://api.firecrawl.dev/v0/scrape", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        url,
+        pageOptions: {
+          onlyMainContent: true,
+          includeHtml: true,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Firecrawl API error: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Firecrawl error:", error);
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { url } = await request.json();
@@ -24,17 +69,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // For now, we'll use Claude to analyze the URL conceptually
-    // In production, you'd integrate Firecrawl API or use Puppeteer
+    // Try to scrape with Firecrawl first
+    const firecrawlData = await scrapeWithFirecrawl(url);
+
     const anthropic = new Anthropic({ apiKey });
 
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2048,
-      messages: [
-        {
-          role: "user",
-          content: `I want to create a website inspired by ${url}. Based on the URL and common patterns for such websites, suggest:
+    let analysisPrompt: string;
+
+    if (firecrawlData && firecrawlData.success) {
+      // Use actual scraped content for analysis
+      analysisPrompt = `Analyze this website content and extract design patterns:
+
+URL: ${url}
+Title: ${firecrawlData.data.metadata.title || "Unknown"}
+Description: ${firecrawlData.data.metadata.description || "None"}
+
+HTML Content (truncated):
+${firecrawlData.data.html?.substring(0, 5000) || "Not available"}
+
+Markdown Content:
+${firecrawlData.data.markdown?.substring(0, 3000) || firecrawlData.data.content.substring(0, 3000)}
+
+Based on this actual website content, provide:
+1. Page structure and layout analysis
+2. Color scheme (extract from HTML/CSS if visible, or infer from content)
+3. Components and sections identified
+4. Font recommendations based on the site's style
+5. Key design patterns
+
+Respond in JSON format:
+{
+  "url": "${url}",
+  "title": "${firecrawlData.data.metadata.title || ""}",
+  "description": "analysis of the website",
+  "structure": "detailed layout description based on content",
+  "colors": ["#hex1", "#hex2", ...],
+  "fonts": ["font1", "font2"],
+  "components": ["component1", "component2", ...],
+  "designPatterns": ["pattern1", "pattern2", ...],
+  "actualContent": "summary of main content found"
+}`;
+    } else {
+      // Fallback to AI-based inference
+      analysisPrompt = `I want to create a website inspired by ${url}. Based on the URL and common patterns for such websites, suggest:
 
 1. Likely page structure and layout
 2. Common color schemes for this type of site
@@ -51,8 +128,18 @@ Respond in JSON format:
   "colors": ["#hex1", "#hex2", ...],
   "fonts": ["font1", "font2"],
   "components": ["component1", "component2", ...],
-  "designPatterns": ["pattern1", "pattern2", ...]
-}`,
+  "designPatterns": ["pattern1", "pattern2", ...],
+  "note": "Analysis based on URL pattern (Firecrawl API not configured)"
+}`;
+    }
+
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 2048,
+      messages: [
+        {
+          role: "user",
+          content: analysisPrompt,
         },
       ],
     });
@@ -70,7 +157,10 @@ Respond in JSON format:
 
     const scrapingResult = JSON.parse(jsonMatch[0]);
 
-    return NextResponse.json(scrapingResult);
+    return NextResponse.json({
+      ...scrapingResult,
+      scrapedWithFirecrawl: firecrawlData !== null && firecrawlData.success,
+    });
   } catch (error) {
     console.error("Web scraping error:", error);
     return NextResponse.json(

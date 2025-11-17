@@ -4,14 +4,67 @@ import { useState } from "react";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { CodePreview } from "@/components/preview/code-preview";
 import { CodeEditor } from "@/components/editor/code-editor";
+import { AuthModal } from "@/components/auth/auth-modal";
+import { ProjectManager } from "@/components/project/project-manager";
 import { Button } from "@/components/ui/button";
-import { Code2, Eye, Menu } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import { useChatStore } from "@/store/chat-store";
+import {
+  Code2,
+  Eye,
+  Menu,
+  User,
+  FolderOpen,
+  Download,
+  LogOut,
+} from "lucide-react";
 
 type ViewMode = "preview" | "code" | "split";
 
 export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>("preview");
   const [showChat, setShowChat] = useState(true);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showProjectManager, setShowProjectManager] = useState(false);
+
+  const { user, signOut, loading: authLoading } = useAuth();
+  const { currentCode } = useChatStore();
+
+  const handleDownload = () => {
+    if (!currentCode) return;
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generated Website</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    ${currentCode}
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "website.html";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -30,31 +83,88 @@ export default function Home() {
             AI Website Builder
           </h1>
         </div>
+
         <div className="flex items-center gap-2">
+          {/* View Mode Buttons */}
+          <div className="hidden sm:flex items-center gap-1 mr-2">
+            <Button
+              variant={viewMode === "preview" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setViewMode("preview")}
+            >
+              <Eye className="h-4 w-4 mr-2" />
+              Preview
+            </Button>
+            <Button
+              variant={viewMode === "code" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setViewMode("code")}
+            >
+              <Code2 className="h-4 w-4 mr-2" />
+              Code
+            </Button>
+            <Button
+              variant={viewMode === "split" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setViewMode("split")}
+              className="hidden lg:flex"
+            >
+              Split
+            </Button>
+          </div>
+
+          {/* Download Button */}
           <Button
-            variant={viewMode === "preview" ? "default" : "outline"}
+            variant="outline"
             size="sm"
-            onClick={() => setViewMode("preview")}
+            onClick={handleDownload}
+            disabled={!currentCode}
+            title="Download as HTML"
           >
-            <Eye className="h-4 w-4 mr-2" />
-            Preview
+            <Download className="h-4 w-4" />
           </Button>
-          <Button
-            variant={viewMode === "code" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setViewMode("code")}
-          >
-            <Code2 className="h-4 w-4 mr-2" />
-            Code
-          </Button>
-          <Button
-            variant={viewMode === "split" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setViewMode("split")}
-            className="hidden lg:flex"
-          >
-            Split
-          </Button>
+
+          {/* Project Manager */}
+          {user && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowProjectManager(true)}
+              title="Projects"
+            >
+              <FolderOpen className="h-4 w-4" />
+            </Button>
+          )}
+
+          {/* Auth Button */}
+          {authLoading ? (
+            <Button variant="outline" size="sm" disabled>
+              <User className="h-4 w-4" />
+            </Button>
+          ) : user ? (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-muted-foreground hidden md:block">
+                {user.email?.split("@")[0]}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => signOut()}
+                title="Sign Out"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAuthModal(true)}
+            >
+              <User className="h-4 w-4 mr-2" />
+              Sign In
+            </Button>
+          )}
         </div>
       </header>
 
@@ -93,6 +203,12 @@ export default function Home() {
           )}
         </div>
       </main>
+
+      {/* Modals */}
+      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+      {showProjectManager && (
+        <ProjectManager onClose={() => setShowProjectManager(false)} />
+      )}
     </div>
   );
 }
