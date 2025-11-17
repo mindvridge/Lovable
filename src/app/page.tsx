@@ -17,6 +17,7 @@ import {
   FolderOpen,
   Download,
   LogOut,
+  FilePlus,
 } from "lucide-react";
 
 type ViewMode = "preview" | "code" | "split";
@@ -28,7 +29,18 @@ export default function Home() {
   const [showProjectManager, setShowProjectManager] = useState(false);
 
   const { user, signOut, loading: authLoading } = useAuth();
-  const { currentCode } = useChatStore();
+  const { currentCode, clearMessages, setCurrentCode } = useChatStore();
+
+  const handleNewProject = () => {
+    if (
+      currentCode &&
+      !confirm("Start a new project? Any unsaved changes will be lost.")
+    ) {
+      return;
+    }
+    clearMessages();
+    setCurrentCode("");
+  };
 
   const handleDownload = () => {
     if (!currentCode) return;
@@ -112,6 +124,16 @@ export default function Home() {
               Split
             </Button>
           </div>
+
+          {/* New Project Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleNewProject}
+            title="New Project"
+          >
+            <FilePlus className="h-4 w-4" />
+          </Button>
 
           {/* Download Button */}
           <Button

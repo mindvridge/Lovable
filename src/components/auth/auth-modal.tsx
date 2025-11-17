@@ -46,7 +46,15 @@ export function AuthModal({ onClose }: AuthModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-card p-6 rounded-lg shadow-xl w-full max-w-md">
+      <div className="bg-card p-6 rounded-lg shadow-xl w-full max-w-md relative">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="absolute top-2 right-2"
+          onClick={onClose}
+        >
+          ✕
+        </Button>
         <h2 className="text-xl font-bold mb-4">
           {isLogin ? "Sign In" : "Create Account"}
         </h2>
@@ -97,13 +105,6 @@ export function AuthModal({ onClose }: AuthModalProps) {
               : "Already have an account? Sign in"}
           </button>
         </div>
-        <Button
-          variant="ghost"
-          className="absolute top-2 right-2"
-          onClick={onClose}
-        >
-          ✕
-        </Button>
       </div>
     </div>
   );
