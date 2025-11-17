@@ -1,16 +1,42 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useChatStore } from "@/store/chat-store";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { Attachment } from "@/types";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, AlertCircle } from "lucide-react";
+
+interface ImageAnalysisResult {
+  colors: string[];
+  layout: string;
+  style: string;
+  components: string[];
+  typography?: string;
+  suggestions: string[];
+}
+
+interface WebScrapingResult {
+  url: string;
+  title: string;
+  description?: string;
+  structure: string;
+  colors: string[];
+  fonts: string[];
+  components: string[];
+  designPatterns: string[];
+}
 
 export function ChatPanel() {
-  const { messages, isLoading, addMessage, setLoading, setCurrentCode, setFiles } =
-    useChatStore();
+  const {
+    messages,
+    isLoading,
+    addMessage,
+    setLoading,
+    setCurrentCode,
+  } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [processingStatus, setProcessingStatus] = useState<string>("");
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -19,6 +45,42 @@ export function ChatPanel() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const analyzeImage = async (
+    imageBase64: string
+  ): Promise<ImageAnalysisResult | null> => {
+    try {
+      const response = await fetch("/api/analyze-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64 }),
+      });
+
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (error) {
+      console.error("Image analysis error:", error);
+      return null;
+    }
+  };
+
+  const scrapeWebsite = async (
+    url: string
+  ): Promise<WebScrapingResult | null> => {
+    try {
+      const response = await fetch("/api/scrape-website", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (error) {
+      console.error("Web scraping error:", error);
+      return null;
+    }
+  };
 
   const handleSend = async (content: string, attachments?: Attachment[]) => {
     // Add user message
@@ -31,6 +93,51 @@ export function ChatPanel() {
     setLoading(true);
 
     try {
+      let enrichedContent = content;
+      const analysisResults: string[] = [];
+
+      // Process attachments if present
+      if (attachments && attachments.length > 0) {
+        for (const attachment of attachments) {
+          if (attachment.type === "image") {
+            setProcessingStatus("Analyzing image design...");
+            const analysis = await analyzeImage(attachment.url);
+            if (analysis) {
+              analysisResults.push(`
+Image Analysis Results:
+- Colors: ${analysis.colors.join(", ")}
+- Layout: ${analysis.layout}
+- Style: ${analysis.style}
+- Components: ${analysis.components.join(", ")}
+- Typography: ${analysis.typography || "Not specified"}
+- Suggestions: ${analysis.suggestions.join("; ")}
+`);
+            }
+          } else if (attachment.type === "url") {
+            setProcessingStatus(`Analyzing ${attachment.url}...`);
+            const scrapingResult = await scrapeWebsite(attachment.url);
+            if (scrapingResult) {
+              analysisResults.push(`
+Website Analysis (${scrapingResult.url}):
+- Title: ${scrapingResult.title}
+- Description: ${scrapingResult.description || "N/A"}
+- Structure: ${scrapingResult.structure}
+- Colors: ${scrapingResult.colors.join(", ")}
+- Fonts: ${scrapingResult.fonts.join(", ")}
+- Components: ${scrapingResult.components.join(", ")}
+- Design Patterns: ${scrapingResult.designPatterns.join(", ")}
+`);
+            }
+          }
+        }
+
+        if (analysisResults.length > 0) {
+          enrichedContent = `${analysisResults.join("\n")}\n\nUser Request: ${content}`;
+        }
+      }
+
+      setProcessingStatus("Generating code...");
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -42,14 +149,17 @@ export function ChatPanel() {
               role: m.role,
               content: m.content,
             })),
-            { role: "user", content },
+            { role: "user", content: enrichedContent },
           ],
           attachments,
         }),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to get response");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.message || `Server error: ${response.status}`
+        );
       }
 
       const data = await response.json();
@@ -64,20 +174,18 @@ export function ChatPanel() {
       if (data.code) {
         setCurrentCode(data.code);
       }
-
-      // Update files if provided
-      if (data.files) {
-        setFiles(data.files);
-      }
     } catch (error) {
       console.error("Error:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+
       addMessage({
         role: "assistant",
-        content:
-          "Sorry, I encountered an error. Please make sure your API keys are configured correctly in the .env.local file.",
+        content: `Sorry, I encountered an error: ${errorMessage}\n\nPlease make sure your API keys are configured correctly in the .env.local file.`,
       });
     } finally {
       setLoading(false);
+      setProcessingStatus("");
     }
   };
 
@@ -102,6 +210,12 @@ export function ChatPanel() {
           messages.map((message) => (
             <ChatMessage key={message.id} message={message} />
           ))
+        )}
+        {processingStatus && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground animate-pulse">
+            <AlertCircle className="h-4 w-4" />
+            {processingStatus}
+          </div>
         )}
         <div ref={messagesEndRef} />
       </div>

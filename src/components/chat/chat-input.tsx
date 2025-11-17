@@ -3,7 +3,8 @@
 import { useState, useRef, KeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, Image, Link, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Send, Image, Link, Loader2, X } from "lucide-react";
 import { Attachment } from "@/types";
 import { v4 as uuidv4 } from "uuid";
 
@@ -12,9 +13,14 @@ interface ChatInputProps {
   isLoading: boolean;
 }
 
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB limit
+
 export function ChatInput({ onSend, isLoading }: ChatInputProps) {
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const [urlError, setUrlError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSend = () => {
@@ -32,10 +38,24 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
     }
   };
 
+  const validateUrl = (url: string): boolean => {
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
       Array.from(files).forEach((file) => {
+        if (file.size > MAX_FILE_SIZE) {
+          alert(`File ${file.name} is too large. Maximum size is 5MB.`);
+          return;
+        }
+
         const reader = new FileReader();
         reader.onloadend = () => {
           setAttachments((prev) => [
@@ -57,17 +77,28 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
   };
 
   const handleUrlAdd = () => {
-    const url = prompt("Enter a URL to reference:");
-    if (url) {
-      setAttachments((prev) => [
-        ...prev,
-        {
-          id: uuidv4(),
-          type: "url",
-          url: url,
-        },
-      ]);
+    setUrlError("");
+
+    if (!urlInput.trim()) {
+      setUrlError("Please enter a URL");
+      return;
     }
+
+    if (!validateUrl(urlInput)) {
+      setUrlError("Please enter a valid URL (http:// or https://)");
+      return;
+    }
+
+    setAttachments((prev) => [
+      ...prev,
+      {
+        id: uuidv4(),
+        type: "url",
+        url: urlInput.trim(),
+      },
+    ]);
+    setUrlInput("");
+    setShowUrlInput(false);
   };
 
   const removeAttachment = (id: string) => {
@@ -86,7 +117,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
               {attachment.type === "image" ? (
                 <img
                   src={attachment.url}
-                  alt={attachment.name}
+                  alt={`Attachment: ${attachment.name || "Design reference"}`}
                   className="h-16 w-16 object-cover rounded"
                 />
               ) : (
@@ -97,6 +128,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
               <button
                 onClick={() => removeAttachment(attachment.id)}
                 className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full h-4 w-4 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label={`Remove attachment ${attachment.name || attachment.url}`}
               >
                 ×
               </button>
@@ -104,6 +136,46 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
           ))}
         </div>
       )}
+
+      {showUrlInput && (
+        <div className="mb-3 p-3 bg-muted rounded-lg">
+          <div className="flex gap-2">
+            <Input
+              value={urlInput}
+              onChange={(e) => {
+                setUrlInput(e.target.value);
+                setUrlError("");
+              }}
+              placeholder="https://example.com"
+              className="flex-1"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleUrlAdd();
+                }
+              }}
+            />
+            <Button size="sm" onClick={handleUrlAdd}>
+              Add
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setShowUrlInput(false);
+                setUrlInput("");
+                setUrlError("");
+              }}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          {urlError && (
+            <p className="text-xs text-destructive mt-1">{urlError}</p>
+          )}
+        </div>
+      )}
+
       <div className="flex gap-2">
         <div className="flex-1 relative">
           <Textarea
@@ -122,6 +194,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
               accept="image/*"
               multiple
               className="hidden"
+              aria-label="Upload image"
             />
             <Button
               type="button"
@@ -129,6 +202,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
               variant="ghost"
               onClick={() => fileInputRef.current?.click()}
               disabled={isLoading}
+              title="Attach image (max 5MB)"
             >
               <Image className="h-4 w-4" />
             </Button>
@@ -136,8 +210,9 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
               type="button"
               size="icon"
               variant="ghost"
-              onClick={handleUrlAdd}
+              onClick={() => setShowUrlInput(!showUrlInput)}
               disabled={isLoading}
+              title="Add reference URL"
             >
               <Link className="h-4 w-4" />
             </Button>

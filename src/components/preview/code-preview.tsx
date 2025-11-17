@@ -2,18 +2,14 @@
 
 import { useChatStore } from "@/store/chat-store";
 import { Code2, Eye, Loader2 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useMemo } from "react";
 
 export function CodePreview() {
   const { currentCode, isLoading } = useChatStore();
-  const [iframeKey, setIframeKey] = useState(0);
 
-  useEffect(() => {
-    // Refresh iframe when code changes
-    setIframeKey((prev) => prev + 1);
-  }, [currentCode]);
+  const previewHtml = useMemo(() => {
+    if (!currentCode) return "";
 
-  const generatePreviewHtml = (code: string) => {
     return `
 <!DOCTYPE html>
 <html lang="en">
@@ -38,7 +34,7 @@ export function CodePreview() {
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    ${code}
+    ${currentCode}
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
@@ -46,7 +42,7 @@ export function CodePreview() {
 </body>
 </html>
     `;
-  };
+  }, [currentCode]);
 
   return (
     <div className="flex flex-col h-full bg-card">
@@ -65,10 +61,10 @@ export function CodePreview() {
         )}
         {currentCode ? (
           <iframe
-            key={iframeKey}
-            srcDoc={generatePreviewHtml(currentCode)}
+            key={currentCode}
+            srcDoc={previewHtml}
             className="w-full h-full border-0"
-            sandbox="allow-scripts"
+            sandbox="allow-scripts allow-same-origin"
             title="Preview"
           />
         ) : (
