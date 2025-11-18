@@ -6,6 +6,10 @@ import { CodePreview } from "@/components/preview/code-preview";
 import { CodeEditor } from "@/components/editor/code-editor";
 import { AuthModal } from "@/components/auth/auth-modal";
 import { ProjectManager } from "@/components/project/project-manager";
+import { ErrorBoundary } from "@/components/error-boundary";
+import { FileTree } from "@/components/files/file-tree";
+import { NewFileDialog } from "@/components/files/new-file-dialog";
+import { DeploymentDialog } from "@/components/deployment/deployment-dialog";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 import { useChatStore } from "@/store/chat-store";
@@ -18,6 +22,8 @@ import {
   Download,
   LogOut,
   FilePlus,
+  FileCode,
+  Rocket,
 } from "lucide-react";
 
 type ViewMode = "preview" | "code" | "split";
@@ -27,19 +33,67 @@ export default function Home() {
   const [showChat, setShowChat] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showProjectManager, setShowProjectManager] = useState(false);
+  const [showFileTree, setShowFileTree] = useState(false);
+  const [showNewFileDialog, setShowNewFileDialog] = useState(false);
+  const [showDeploymentDialog, setShowDeploymentDialog] = useState(false);
 
   const { user, signOut, loading: authLoading } = useAuth();
-  const { currentCode, clearMessages, setCurrentCode } = useChatStore();
+  const {
+    currentCode,
+    clearMessages,
+    setCurrentCode,
+    files,
+    selectedFileId,
+    addFile,
+    updateFile,
+    selectFile,
+    setFiles,
+  } = useChatStore();
 
   const handleNewProject = () => {
     if (
-      currentCode &&
+      (currentCode || files.length > 0) &&
       !confirm("Start a new project? Any unsaved changes will be lost.")
     ) {
       return;
     }
     clearMessages();
     setCurrentCode("");
+    setFiles([]);
+    selectFile(null);
+  };
+
+  const handleCreateFile = (name: string, type: string) => {
+    addFile({
+      name,
+      path: `src/${name}`,
+      content: getDefaultFileContent(type),
+      language: type === "css" ? "css" : "typescript",
+    });
+  };
+
+  const handleDeleteFile = (id: string) => {
+    if (!confirm("Delete this file?")) return;
+
+    const newFiles = files.filter((f) => f.id !== id);
+    setFiles(newFiles);
+
+    if (selectedFileId === id) {
+      selectFile(newFiles.length > 0 ? newFiles[0].id : null);
+    }
+  };
+
+  const getDefaultFileContent = (type: string): string => {
+    if (type === "tsx") {
+      return `export function Component() {\n  return <div>New Component</div>;\n}\n`;
+    }
+    if (type === "ts") {
+      return `export function helper() {\n  // Add your logic here\n}\n`;
+    }
+    if (type === "css") {
+      return `/* Add your styles here */\n`;
+    }
+    return "";
   };
 
   const handleDownload = () => {
@@ -125,6 +179,16 @@ export default function Home() {
             </Button>
           </div>
 
+          {/* File Tree Toggle */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowFileTree(!showFileTree)}
+            title="Toggle File Tree"
+          >
+            <FileCode className="h-4 w-4" />
+          </Button>
+
           {/* New Project Button */}
           <Button
             variant="outline"
@@ -144,6 +208,17 @@ export default function Home() {
             title="Download as HTML"
           >
             <Download className="h-4 w-4" />
+          </Button>
+
+          {/* Deploy Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowDeploymentDialog(true)}
+            disabled={!currentCode}
+            title="Deploy Project"
+          >
+            <Rocket className="h-4 w-4" />
           </Button>
 
           {/* Project Manager */}
@@ -198,28 +273,51 @@ export default function Home() {
             showChat ? "w-full md:w-[400px] lg:w-[450px]" : "hidden"
           } border-r flex-shrink-0 transition-all duration-300`}
         >
-          <ChatPanel />
+          <ErrorBoundary>
+            <ChatPanel />
+          </ErrorBoundary>
         </div>
+
+        {/* File Tree */}
+        {showFileTree && (
+          <div className="w-[250px] flex-shrink-0">
+            <FileTree
+              files={files}
+              selectedFileId={selectedFileId}
+              onSelectFile={selectFile}
+              onAddFile={() => setShowNewFileDialog(true)}
+              onDeleteFile={handleDeleteFile}
+            />
+          </div>
+        )}
 
         {/* Preview/Code Panel */}
         <div className="flex-1 flex overflow-hidden">
           {viewMode === "preview" && (
             <div className="w-full">
-              <CodePreview />
+              <ErrorBoundary>
+                <CodePreview />
+              </ErrorBoundary>
             </div>
           )}
           {viewMode === "code" && (
             <div className="w-full">
-              <CodeEditor />
+              <ErrorBoundary>
+                <CodeEditor />
+              </ErrorBoundary>
             </div>
           )}
           {viewMode === "split" && (
             <>
               <div className="w-1/2 border-r">
-                <CodeEditor />
+                <ErrorBoundary>
+                  <CodeEditor />
+                </ErrorBoundary>
               </div>
               <div className="w-1/2">
-                <CodePreview />
+                <ErrorBoundary>
+                  <CodePreview />
+                </ErrorBoundary>
               </div>
             </>
           )}
@@ -231,6 +329,15 @@ export default function Home() {
       {showProjectManager && (
         <ProjectManager onClose={() => setShowProjectManager(false)} />
       )}
+      <NewFileDialog
+        open={showNewFileDialog}
+        onClose={() => setShowNewFileDialog(false)}
+        onCreateFile={handleCreateFile}
+      />
+      <DeploymentDialog
+        open={showDeploymentDialog}
+        onClose={() => setShowDeploymentDialog(false)}
+      />
     </div>
   );
 }
